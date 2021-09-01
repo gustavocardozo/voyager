@@ -246,7 +246,6 @@ class VoyagerMediaController extends Controller
             }
 
             $file = $request->file->storeAs($request->upload_path, $name.'.'.$extension, $this->filesystem);
-            $file = preg_replace('#/+#', '/', $file);
 
             $imageMimeTypes = [
                 'image/jpeg',
@@ -256,8 +255,7 @@ class VoyagerMediaController extends Controller
                 'image/svg+xml',
             ];
             if (in_array($request->file->getMimeType(), $imageMimeTypes)) {
-                $content = Storage::disk($this->filesystem)->get($file);
-                $image = Image::make($content);
+                $image = Image::make($realPath.$file);
 
                 if ($request->file->getClientOriginalExtension() == 'gif') {
                     copy($request->file->getRealPath(), $realPath.$file);
@@ -274,8 +272,7 @@ class VoyagerMediaController extends Controller
                                     ($thumbnail_data->height ?? null),
                                     function ($constraint) {
                                         $constraint->aspectRatio();
-                                    },
-                                    ($thumbnail_data->position ?? 'center')
+                                    }, ($thumbnail_data->position ?? 'center')
                                 );
                             } elseif ($type == 'crop') {
                                 $thumbnail = $thumbnail->crop(
@@ -304,15 +301,14 @@ class VoyagerMediaController extends Controller
                             ) {
                                 $thumbnail = $this->addWatermarkToImage($thumbnail, $details->watermark);
                             }
-                            $thumbnail_file = $request->upload_path.$name.'-'.($thumbnail_data->name ?? 'thumbnail').'.'.$extension;
-                            Storage::disk($this->filesystem)->put($thumbnail_file, $thumbnail->encode($extension, ($details->quality ?? 90))->encoded);
+                            $thumbnail->save($realPath.$request->upload_path.$name.'-'.($thumbnail_data->name ?? 'thumbnail').'.'.$extension, ($details->quality ?? 90));
                         }
                     }
                     // Add watermark to image
                     if (property_exists($details, 'watermark') && property_exists($details->watermark, 'source')) {
                         $image = $this->addWatermarkToImage($image, $details->watermark);
                     }
-                    Storage::disk($this->filesystem)->put($file, $image->encode($extension, ($details->quality ?? 90))->encoded);
+                    $image->save($realPath.$file, ($details->quality ?? 90));
                 }
             }
 
@@ -342,8 +338,7 @@ class VoyagerMediaController extends Controller
         $width = $request->get('width');
 
         $realPath = Storage::disk($this->filesystem)->getDriver()->getAdapter()->getPathPrefix();
-        $originImagePath = $request->upload_path.'/'.$request->originImageName;
-        $originImagePath = preg_replace('#/+#', '/', $originImagePath);
+        $originImagePath = $realPath.$request->upload_path.'/'.$request->originImageName;
 
         try {
             if ($createMode) {
@@ -351,15 +346,13 @@ class VoyagerMediaController extends Controller
                 $fileNameParts = explode('.', $request->originImageName);
                 array_splice($fileNameParts, count($fileNameParts) - 1, 0, 'cropped_'.time());
                 $newImageName = implode('.', $fileNameParts);
-                $destImagePath = preg_replace('#/+#', '/', $request->upload_path.'/'.$newImageName);
+                $destImagePath = $realPath.$request->upload_path.'/'.$newImageName;
             } else {
                 // override the original image
                 $destImagePath = $originImagePath;
             }
 
-            $content = Storage::disk($this->filesystem)->get($originImagePath);
-            $image = Image::make($content)->crop($width, $height, $x, $y);
-            Storage::disk($this->filesystem)->put($destImagePath, $image->encode()->encoded);
+            Image::make($originImagePath)->crop($width, $height, $x, $y)->save($destImagePath);
 
             $success = true;
             $message = __('voyager::media.success_crop_image');

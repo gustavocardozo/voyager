@@ -163,6 +163,10 @@ trait Translatable
             return [$this->getAttribute($attribute), config('voyager.multilingual.default'), false];
         }
 
+        if (!$this->relationLoaded('translations')) {
+            $this->load('translations');
+        }
+
         if (is_null($locale)) {
             $locale = app()->getLocale();
         }
@@ -173,16 +177,12 @@ trait Translatable
 
         $default = config('voyager.multilingual.default');
 
+        $translations = $this->getRelation('translations')
+            ->where('column_name', $attribute);
+
         if ($default == $locale) {
             return [$this->getAttribute($attribute), $default, true];
         }
-
-        if (!$this->relationLoaded('translations')) {
-            $this->load('translations');
-        }
-
-        $translations = $this->getRelation('translations')
-            ->where('column_name', $attribute);
 
         $localeTranslation = $translations->where('locale', $locale)->first();
 
@@ -278,9 +278,7 @@ trait Translatable
         $self = new static();
         $table = $self->getTable();
 
-        return $query->whereIn(
-            $self->getKeyName(),
-            Translation::where('table_name', $table)
+        return $query->whereIn($self->getKeyName(), Translation::where('table_name', $table)
             ->where('column_name', $field)
             ->where('value', $operator, $value)
             ->when(!is_null($locales), function ($query) use ($locales) {

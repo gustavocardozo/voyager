@@ -16,7 +16,7 @@
             @include('voyager::partials.bulk-delete')
         @endcan
         @can('edit', app($dataType->model_name))
-            @if(!empty($dataType->order_column) && !empty($dataType->order_display_column))
+            @if(isset($dataType->order_column) && isset($dataType->order_display_column))
                 <a href="{{ route('voyager.'.$dataType->slug.'.order') }}" class="btn btn-primary btn-add-new">
                     <i class="voyager-list"></i> <span>{{ __('voyager::bread.order') }}</span>
                 </a>
@@ -45,29 +45,45 @@
                     <div class="panel-body">
                         @if ($isServerSide)
                             <form method="get" class="form-search">
+                                <input type="hidden" name="key" id="key_list" value="{{ $multiSearch ?$multiSearch->key : '' }}">
+                                <input type="hidden" name="filter" id="filter_list" value="{{ $multiSearch ?$multiSearch->filter : '' }}">
+                                <input type="hidden" name="s" id="s_list" value="{{ $multiSearch ?$multiSearch->value : '' }}">
+
                                 <div id="search-input">
                                     <div class="col-2">
-                                        <select id="search_key" name="key">
+                                        <select id="search_key" name="key_c">
                                             @foreach($searchNames as $key => $name)
                                                 <option value="{{ $key }}" @if($search->key == $key || (empty($search->key) && $key == $defaultSearchKey)) selected @endif>{{ $name }}</option>
                                             @endforeach
                                         </select>
                                     </div>
                                     <div class="col-2">
-                                        <select id="filter" name="filter">
+                                        <select id="filter" name="filter_c">
                                             <option value="contains" @if($search->filter == "contains") selected @endif>contains</option>
                                             <option value="equals" @if($search->filter == "equals") selected @endif>=</option>
                                         </select>
                                     </div>
-                                    <div class="input-group col-md-12">
-                                        <input type="text" class="form-control" placeholder="{{ __('voyager::generic.search') }}" name="s" value="{{ $search->value }}">
+                                    <div class="input-group col-md-12" >
+                                        <input type="text" class="form-control" id="search_text"
+                                               style="width: calc(100% - 50px);"
+                                               placeholder="{{ __('voyager::generic.search') }}" name="s_c" value="{{ $search->value }}">
                                         <span class="input-group-btn">
                                             <button class="btn btn-info btn-lg" type="submit">
                                                 <i class="voyager-search"></i>
                                             </button>
+                                            <button id="add-filter" class="btn btn-info btn-lg" type="button">
+                                                <i class="voyager-thumb-tack"></i>
+                                            </button>
                                         </span>
                                     </div>
                                 </div>
+                                <div class="row" id="active_filters_container" style="display: none;">
+                                    <div id="active_filters" class="col-md-10"></div>
+                                    <div class="col-md-2">
+                                        <button id="send_filters" type="submit" class="btn btn-primary pull-right">Buscar</button>
+                                    </div>
+                                </div>
+
                                 @if (Request::has('sort_order') && Request::has('order_by'))
                                     <input type="hidden" name="sort_order" value="{{ Request::get('sort_order') }}">
                                     <input type="hidden" name="order_by" value="{{ Request::get('order_by') }}">
@@ -79,13 +95,13 @@
                                 <thead>
                                     <tr>
                                         @if($showCheckboxColumn)
-                                            <th class="dt-not-orderable">
+                                            <th>
                                                 <input type="checkbox" class="select_all">
                                             </th>
                                         @endif
                                         @foreach($dataType->browseRows as $row)
                                         <th>
-                                            @if ($isServerSide && ($row->type !== 'relationship' || $row->details->type == 'belongsTo'))
+                                            @if ($isServerSide)
                                                 <a href="{{ $row->sortByUrl($orderBy, $sortOrder) }}">
                                             @endif
                                             {{ $row->getTranslatedAttribute('display_name') }}
@@ -101,7 +117,7 @@
                                             @endif
                                         </th>
                                         @endforeach
-                                        <th class="actions text-right dt-not-orderable">{{ __('voyager::generic.actions') }}</th>
+                                        <th class="actions text-right">{{ __('voyager::generic.actions') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -270,6 +286,37 @@
                                         'to' => $dataTypeContent->lastItem(),
                                         'all' => $dataTypeContent->total()
                                     ]) }}</div>
+
+                                @if ($dataType->model_name == 'App\Factura')
+                                <a href="/admin/exporting{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                    <button id="export-to-excel" type="button" class="btn btn-danger">Exportar facturas</button>
+                                </a>
+                                @endif
+                                @if ($dataType->model_name == 'App\Pago')
+                                    <a href="/admin/export-payments{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                        <button id="export-to-excel" type="button" class="btn btn-danger">Exportar pagos</button>
+                                    </a>
+                                @endif
+                                @if ($dataType->model_name == 'App\ClienteApp')
+                                    <a href="/admin/export-cliente-app{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                        <button id="export-to-excel" type="button" class="btn btn-danger">Exportar clientes app</button>
+                                    </a>
+                                @endif
+                                @if ($dataType->model_name == 'App\Baja')
+                                    <a href="/admin/export-baja{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                        <button id="export-to-excel" type="button" class="btn btn-danger">Exportar bajas</button>
+                                    </a>
+                                @endif
+                                @if ($dataType->model_name == 'App\Cliente')
+                                    <a href="/admin/export-clientes{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                        <button id="export-to-excel" type="button" class="btn btn-danger">Exportar clientes</button>
+                                    </a>
+                                @endif
+                                @if ($dataType->model_name == 'App\Gasto')
+                                    <a href="/admin/export-gastos{{ !empty($_SERVER['QUERY_STRING']) ? '?'.$_SERVER['QUERY_STRING'] : ''  }}">
+                                        <button id="export-to-excel" type="button" class="btn btn-danger">Exportar gastos</button>
+                                    </a>
+                                @endif
                             </div>
                             <div class="pull-right">
                                 {{ $dataTypeContent->appends([
@@ -307,6 +354,14 @@
             </div><!-- /.modal-content -->
         </div><!-- /.modal-dialog -->
     </div><!-- /.modal -->
+
+    <script id="filter-template" type="text/template">
+        <span class="label label-default custom-filter" data-key="{1}"
+              data-filter="{2}"
+              data-s="{3}">
+            {0} {2} "{3}" <span class="glyphicon glyphicon-remove remove-custom-filter" aria-hidden="true"></span>
+        </span>
+    </script>
 @stop
 
 @section('css')
@@ -321,15 +376,54 @@
         <script src="{{ voyager_asset('lib/js/dataTables.responsive.min.js') }}"></script>
     @endif
     <script>
+        var key_list = [];
+        var filter_list = [];
+        var search_list = [];
+
+        function transferFilters() {
+            $('#filter_list').val(JSON.stringify(filter_list));
+            $('#key_list').val(JSON.stringify(key_list));
+            $('#s_list').val(JSON.stringify(search_list));
+        }
+
+        function addFilter(key, filter, search, text) {
+            $('#active_filters_container').show();
+            // Change UI
+            var template = $('#filter-template').html();
+            var content = $(template.format(text, key, filter, search));
+            content.find('.remove-custom-filter').off('click').on('click',removeFilter);
+            $('#active_filters').append(content);
+
+            // Save current filters
+            key_list.push(key);
+            filter_list.push(filter);
+            search_list.push(search);
+            transferFilters();
+        }
+
+        function removeFilter() {
+            var parent = $(this).parents('.custom-filter');
+            key_list.forEach(function (key, index) {
+                if(key == parent.data('key')) {
+                    key_list.splice(index, index + 1);
+                    filter_list.splice(index, index + 1);
+                    search_list.splice(index, index + 1);
+                    $('#active_filters .custom-filter:eq(' + index + ')').remove();
+                    if (key_list.length < 1) {
+                        $('#active_filters_container').hide();
+                        transferFilters();
+                    }
+                }
+            });
+        }
+
         $(document).ready(function () {
             @if (!$dataType->server_side)
                 var table = $('#dataTable').DataTable({!! json_encode(
                     array_merge([
                         "order" => $orderColumn,
                         "language" => __('voyager::datatable'),
-                        "columnDefs" => [
-                            ['targets' => 'dt-not-orderable', 'searchable' =>  false, 'orderable' => false],
-                        ],
+                        "columnDefs" => [['targets' => -1, 'searchable' =>  false, 'orderable' => false]],
                     ],
                     config('voyager.dashboard.data_tables', []))
                 , true) !!});
@@ -337,6 +431,28 @@
                 $('#search-input select').select2({
                     minimumResultsForSearch: Infinity
                 });
+
+                if ($('#key_list').val().length) {
+                    var keys = JSON.parse($('#key_list').val());
+                    var filters = JSON.parse($('#filter_list').val());
+                    var values = JSON.parse($('#s_list').val());
+                }
+                if (keys && filters && values) {
+                    keys.forEach(function (key, index) {
+                        var text = $('#search_key option[value='+key+']').text();
+                        addFilter(key, filters[index], values[index], text);
+                    });
+                }
+
+                $('.remove-custom-filter').off('click').on('click', removeFilter);
+                $('#add-filter').click(function () {
+                    var key = $('#search_key').val();
+                    var filter = $('#filter').val();
+                    var search = $('#search_text').val();
+                    addFilter(key, filter, search, $('#search_key option:selected').text());
+                    $('#search_text').val('');
+                });
+
             @endif
 
             @if ($isModelTranslatable)
@@ -357,6 +473,7 @@
             $('#delete_form')[0].action = '{{ route('voyager.'.$dataType->slug.'.destroy', '__id') }}'.replace('__id', $(this).data('id'));
             $('#delete_modal').modal('show');
         });
+
 
         @if($usesSoftDeletes)
             @php

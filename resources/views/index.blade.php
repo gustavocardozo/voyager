@@ -3,8 +3,11 @@
 @section('content')
     <div class="page-content">
         @include('voyager::alerts')
-        @include('voyager::dimmers')
-        <div class="analytics-container">
+        <!--@include('voyager::dimmers')-->
+        <div class="alerts">
+            <p class="lead">Seleccione la opción que desee en el menú izquierdo</p>
+        </div>
+        <!--<div class="analytics-container">
             <?php $google_analytics_client_id = Voyager::setting("admin.google_analytics_client_id"); ?>
             @if (isset($google_analytics_client_id) && !empty($google_analytics_client_id))
                 {{-- Google Analytics Embed --}}
@@ -75,7 +78,7 @@
                     </li>
                 </ul>
             </div>
-        </div>
+        </div>-->
     </div>
 @stop
 

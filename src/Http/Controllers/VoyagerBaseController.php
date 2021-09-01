@@ -2,6 +2,8 @@
 
 namespace TCG\Voyager\Http\Controllers;
 
+use App\Cliente;
+use App\ClienteApp;
 use Exception;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\Request;
@@ -45,19 +47,22 @@ class VoyagerBaseController extends Controller
 
         $getter = $dataType->server_side ? 'paginate' : 'get';
 
+        $searchList = [];
+        $multiSearch = $this->getMultiSearch($request);
+        $searchList = $this->getSearchList($request);
         $search = (object) ['value' => $request->get('s'), 'key' => $request->get('key'), 'filter' => $request->get('filter')];
+
 
         $searchNames = [];
         if ($dataType->server_side) {
             $searchable = SchemaManager::describeTable(app($dataType->model_name)->getTable())->pluck('name')->toArray();
             $dataRow = Voyager::model('DataRow')->whereDataTypeId($dataType->id)->get();
             foreach ($searchable as $key => $value) {
-                $field = $dataRow->where('field', $value)->first();
-                $displayName = ucwords(str_replace('_', ' ', $value));
-                if ($field !== null) {
-                    $displayName = $field->getTranslatedAttribute('display_name');
-                }
-                $searchNames[$value] = $displayName;
+                $displayName = $dataRow->where('field', $value)->first()->getTranslatedAttribute('display_name');
+                $searchNames[$value] = $displayName ?: ucwords(str_replace('_', ' ', $value));
+            }
+            if (isset($this->custonSearchNames)) {
+                $searchNames = $this->custonSearchNames;
             }
         }
 
@@ -70,10 +75,10 @@ class VoyagerBaseController extends Controller
         if (strlen($dataType->model_name) != 0) {
             $model = app($dataType->model_name);
 
-            $query = $model::select($dataType->name.'.*');
-
             if ($dataType->scope && $dataType->scope != '' && method_exists($model, 'scope'.ucfirst($dataType->scope))) {
-                $query->{$dataType->scope}();
+                $query = $model->{$dataType->scope}();
+            } else {
+                $query = $model::select('*');
             }
 
             // Use withTrashed() if model uses SoftDeletes and if toggle is selected
@@ -89,35 +94,37 @@ class VoyagerBaseController extends Controller
             // If a column has a relationship associated with it, we do not want to show that field
             $this->removeRelationshipField($dataType, 'browse');
 
-            if ($search->value != '' && $search->key && $search->filter) {
-                $search_filter = ($search->filter == 'equals') ? '=' : 'LIKE';
-                $search_value = ($search->filter == 'equals') ? $search->value : '%'.$search->value.'%';
-
-                $searchField = $dataType->name.'.'.$search->key;
-                if ($row = $this->findRelationshipRow($dataType->rows->where('type', 'relationship'), $search->key)) {
-                    $query->whereIn(
-                        $searchField,
-                        $row->details->model::where($row->details->label, $search_filter, $search_value)->pluck('id')->toArray()
-                    );
-                } else {
-                    $query->where($searchField, $search_filter, $search_value);
+            foreach ($searchList as $search) {
+                if ($search->value != '' && $search->key && $search->filter) {
+                    $search_filter = ($search->filter == 'equals') ? '=' : 'LIKE';
+                    $search_value = ($search->filter == 'equals') ? $search->value : '%'.$search->value.'%';
+                    if (strpos($search->key, 'clientes.') !== false) {
+                        $field = substr($search->key, strlen('clientes.'));
+                        $cliente = Cliente::query()->where($field,$search_filter, $search_value)->first();
+                        if ($cliente) {
+                            $query->where('id_clientes', '=', $cliente->id_clientes);
+                        }
+                    } else {
+                        $query->where($search->key, $search_filter, $search_value);
+                    }
                 }
             }
 
-            $row = $dataType->rows->where('field', $orderBy)->firstWhere('type', 'relationship');
-            if ($orderBy && (in_array($orderBy, $dataType->fields()) || !empty($row))) {
-                $querySortOrder = (!empty($sortOrder)) ? $sortOrder : 'desc';
-                if (!empty($row)) {
-                    $query->select([
-                        $dataType->name.'.*',
-                        'joined.'.$row->details->label.' as '.$orderBy,
-                    ])->leftJoin(
-                        $row->details->table.' as joined',
-                        $dataType->name.'.'.$row->details->column,
-                        'joined.'.$row->details->key,
-                    );
-                }
+            if ($dataType->model_name == 'App\Direccion') {
+                $query->join('clientes', 'clientes.id_clientes','=', 'direcciones_x_cliente.id_clientes')
+                    ->where('clientes.modifico_datos','=','1');
+            }
 
+            if ($dataType->model_name == 'App\Cliente') {
+                $query->where('clientes.modifico_datos','=','1');
+            }
+
+            if ($dataType->model_name == 'App\ClienteApp') {
+                $query->where('estado','=','completado');
+            }
+
+            if ($orderBy && in_array($orderBy, $dataType->fields())) {
+                $querySortOrder = (!empty($sortOrder)) ? $sortOrder : 'desc';
                 $dataTypeContent = call_user_func([
                     $query->orderBy($orderBy, $querySortOrder),
                     $getter,
@@ -191,6 +198,7 @@ class VoyagerBaseController extends Controller
             'dataTypeContent',
             'isModelTranslatable',
             'search',
+            'multiSearch',
             'orderBy',
             'orderColumn',
             'sortOrder',
@@ -225,16 +233,15 @@ class VoyagerBaseController extends Controller
 
         if (strlen($dataType->model_name) != 0) {
             $model = app($dataType->model_name);
-            $query = $model->query();
 
             // Use withTrashed() if model uses SoftDeletes and if toggle is selected
             if ($model && in_array(SoftDeletes::class, class_uses_recursive($model))) {
-                $query = $query->withTrashed();
+                $model = $model->withTrashed();
             }
             if ($dataType->scope && $dataType->scope != '' && method_exists($model, 'scope'.ucfirst($dataType->scope))) {
-                $query = $query->{$dataType->scope}();
+                $model = $model->{$dataType->scope}();
             }
-            $dataTypeContent = call_user_func([$query, 'findOrFail'], $id);
+            $dataTypeContent = call_user_func([$model, 'findOrFail'], $id);
             if ($dataTypeContent->deleted_at) {
                 $isSoftDeleted = true;
             }
@@ -287,16 +294,15 @@ class VoyagerBaseController extends Controller
 
         if (strlen($dataType->model_name) != 0) {
             $model = app($dataType->model_name);
-            $query = $model->query();
 
             // Use withTrashed() if model uses SoftDeletes and if toggle is selected
             if ($model && in_array(SoftDeletes::class, class_uses_recursive($model))) {
-                $query = $query->withTrashed();
+                $model = $model->withTrashed();
             }
             if ($dataType->scope && $dataType->scope != '' && method_exists($model, 'scope'.ucfirst($dataType->scope))) {
-                $query = $query->{$dataType->scope}();
+                $model = $model->{$dataType->scope}();
             }
-            $dataTypeContent = call_user_func([$query, 'findOrFail'], $id);
+            $dataTypeContent = call_user_func([$model, 'findOrFail'], $id);
         } else {
             // If Model doest exist, get data from table name
             $dataTypeContent = DB::table($dataType->name)->where('id', $id)->first();
@@ -338,37 +344,25 @@ class VoyagerBaseController extends Controller
         $id = $id instanceof \Illuminate\Database\Eloquent\Model ? $id->{$id->getKeyName()} : $id;
 
         $model = app($dataType->model_name);
-        $query = $model->query();
         if ($dataType->scope && $dataType->scope != '' && method_exists($model, 'scope'.ucfirst($dataType->scope))) {
-            $query = $query->{$dataType->scope}();
+            $model = $model->{$dataType->scope}();
         }
         if ($model && in_array(SoftDeletes::class, class_uses_recursive($model))) {
-            $query = $query->withTrashed();
+            $data = $model->withTrashed()->findOrFail($id);
+        } else {
+            $data = call_user_func([$dataType->model_name, 'findOrFail'], $id);
         }
-
-        $data = $query->findOrFail($id);
 
         // Check permission
         $this->authorize('edit', $data);
 
         // Validate fields with ajax
         $val = $this->validateBread($request->all(), $dataType->editRows, $dataType->name, $id)->validate();
-
-        // Get fields with images to remove before updating and make a copy of $data
-        $to_remove = $dataType->editRows->where('type', 'image')
-            ->filter(function ($item, $key) use ($request) {
-                return $request->hasFile($item->field);
-            });
-        $original_data = clone($data);
-
         $this->insertUpdateData($request, $slug, $dataType->editRows, $data);
-
-        // Delete Images
-        $this->deleteBreadImages($original_data, $to_remove);
 
         event(new BreadDataUpdated($dataType, $data));
 
-        if (auth()->user()->can('browse', app($dataType->model_name))) {
+        if (auth()->user()->can('browse', $model)) {
             $redirect = redirect()->route("voyager.{$dataType->slug}.index");
         } else {
             $redirect = redirect()->back();
@@ -532,15 +526,14 @@ class VoyagerBaseController extends Controller
         $dataType = Voyager::model('DataType')->where('slug', '=', $slug)->first();
 
         // Check permission
-        $model = app($dataType->model_name);
-        $this->authorize('delete', $model);
+        $this->authorize('delete', app($dataType->model_name));
 
         // Get record
-        $query = $model->withTrashed();
+        $model = call_user_func([$dataType->model_name, 'withTrashed']);
         if ($dataType->scope && $dataType->scope != '' && method_exists($model, 'scope'.ucfirst($dataType->scope))) {
-            $query = $query->{$dataType->scope}();
+            $model = $model->{$dataType->scope}();
         }
-        $data = $query->findOrFail($id);
+        $data = $model->findOrFail($id);
 
         $displayName = $dataType->getTranslatedAttribute('display_name_singular');
 
@@ -798,7 +791,7 @@ class VoyagerBaseController extends Controller
         // Check permission
         $this->authorize('edit', app($dataType->model_name));
 
-        if (empty($dataType->order_column) || empty($dataType->order_display_column)) {
+        if (!isset($dataType->order_column) || !isset($dataType->order_display_column)) {
             return redirect()
             ->route("voyager.{$dataType->slug}.index")
             ->with([
@@ -808,11 +801,10 @@ class VoyagerBaseController extends Controller
         }
 
         $model = app($dataType->model_name);
-        $query = $model->query();
         if ($model && in_array(SoftDeletes::class, class_uses_recursive($model))) {
-            $query = $query->withTrashed();
+            $model = $model->withTrashed();
         }
-        $results = $query->orderBy($dataType->order_column, $dataType->order_direction)->get();
+        $results = $model->orderBy($dataType->order_column, $dataType->order_direction)->get();
 
         $display_column = $dataType->order_display_column;
 
@@ -897,17 +889,10 @@ class VoyagerBaseController extends Controller
                 $model = app($options->model);
                 $skip = $on_page * ($page - 1);
 
-                $additional_attributes = $model->additional_attributes ?? [];
-
-                // Apply local scope if it is defined in the relationship-options
-                if (isset($options->scope) && $options->scope != '' && method_exists($model, 'scope'.ucfirst($options->scope))) {
-                    $model = $model->{$options->scope}();
-                }
-
                 // If search query, use LIKE to filter results depending on field label
                 if ($search) {
                     // If we are using additional_attribute as label
-                    if (in_array($options->label, $additional_attributes)) {
+                    if (in_array($options->label, $model->additional_attributes ?? [])) {
                         $relationshipOptions = $model->all();
                         $relationshipOptions = $relationshipOptions->filter(function ($model) use ($search, $options) {
                             return stripos($model->{$options->label}, $search) !== false;
@@ -927,20 +912,11 @@ class VoyagerBaseController extends Controller
 
                 $results = [];
 
-                if (!$row->required && !$search && $page == 1) {
+                if (!$row->required && !$search) {
                     $results[] = [
                         'id'   => '',
                         'text' => __('voyager::generic.none'),
                     ];
-                }
-
-                // Sort results
-                if (!empty($options->sort->field)) {
-                    if (!empty($options->sort->direction) && strtolower($options->sort->direction) == 'desc') {
-                        $relationshipOptions = $relationshipOptions->sortByDesc($options->sort->field);
-                    } else {
-                        $relationshipOptions = $relationshipOptions->sortBy($options->sort->field);
-                    }
                 }
 
                 foreach ($relationshipOptions as $relationshipOption) {
@@ -963,10 +939,54 @@ class VoyagerBaseController extends Controller
         return response()->json([], 404);
     }
 
-    protected function findRelationshipRow($relationshipRows, $searchKey)
+    protected function setWhereParams($searchList, &$query) {
+        foreach ($searchList as $search) {
+            $operator = $search->filter == 'equals' ? '=' : 'like';
+            $value = ($search->filter == 'equals') ? $search->value : '%'.$search->value.'%';
+            $query->where($search->key, $operator, $value);
+        }
+    }
+
+    /**
+     * @param Request $request
+     * @return array
+     */
+    protected function getSearchList(Request $request): array
     {
-        return $relationshipRows->filter(function ($item) use ($searchKey) {
-            return $item->details->type == 'belongsTo' && $item->details->column == $searchKey;
-        })->first();
+        $searchList = [];
+        if (!empty($request->get('key')) && !empty($request->get('filter') && !empty($request->get('s')))) {
+            $keys = json_decode($request->get('key'));
+            $filters = json_decode($request->get('filter'));
+            $values = json_decode($request->get('s'));
+            if ($keys && $filters && $values) {
+                $multiSearch = (object)['value' => $request->get('s'), 'key' => $request->get('key'), 'filter' => $request->get('filter')];
+                for ($i = 0; $i < count($keys); $i++) {
+                    $searchList[] = (object)['value' => $values[$i], 'key' => $keys[$i], 'filter' => $filters[$i]];
+                }
+            } else {
+                $search = (object) ['value' => $request->get('s'), 'key' => $request->get('key'), 'filter' => $request->get('filter')];
+                $searchList[] = $search;
+            }
+
+        } else {
+            if (!empty($request->get('key_c')) && !empty($request->get('filter_c') && !empty($request->get('s_c')))) {
+                $search = (object)['value' => $request->get('s_c'), 'key' => $request->get('key_c'), 'filter' => $request->get('filter_c')];
+                $searchList[] = $search;
+            }
+        }
+        return $searchList;
+    }
+
+    /**
+     * @param Request $request
+     * @return array
+     */
+    protected function getMultiSearch(Request $request)
+    {
+        $multiSearch = null;
+        if (!empty($request->get('key')) && !empty($request->get('filter') && !empty($request->get('s')))) {
+            $multiSearch = (object)['value' => $request->get('s'), 'key' => $request->get('key'), 'filter' => $request->get('filter')];
+        }
+        return $multiSearch;
     }
 }

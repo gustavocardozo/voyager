@@ -6,7 +6,6 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Bus\DispatchesJobs;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Routing\Controller as BaseController;
 use Illuminate\Support\Facades\Storage;
 use TCG\Voyager\Events\FileDeleted;
@@ -73,7 +72,6 @@ abstract class Controller extends BaseController
             }
 
             $content = $this->getContentBasedOnType($request, $slug, $row, $row->details);
-
             if ($row->type == 'relationship' && $row->details->type != 'belongsToMany') {
                 $row->field = @$row->details->column;
             }
@@ -123,8 +121,8 @@ abstract class Controller extends BaseController
                     'table'           => $row->details->pivot_table,
                     'foreignPivotKey' => $row->details->foreign_pivot_key ?? null,
                     'relatedPivotKey' => $row->details->related_pivot_key ?? null,
-                    'parentKey'       => $row->details->parent_key ?? null,
-                    'relatedKey'      => $row->details->key,
+                    'parentKey'       => $row->details->key,
+                    'relatedKey'      => $row->details->related_key ?? null,
                 ];
             } else {
                 $data->{$row->field} = $content;
@@ -205,11 +203,7 @@ abstract class Controller extends BaseController
             if (!empty($field->display_name)) {
                 if (!empty($data[$fieldName]) && is_array($data[$fieldName])) {
                     foreach ($data[$fieldName] as $index => $element) {
-                        if ($element instanceof UploadedFile) {
-                            $name = $element->getClientOriginalName();
-                        } else {
-                            $name = $index + 1;
-                        }
+                        $name = $element->getClientOriginalName() ?? $index + 1;
 
                         $customAttributes[$fieldName.'.'.$index] = $field->getTranslatedAttribute('display_name').' '.$name;
                     }

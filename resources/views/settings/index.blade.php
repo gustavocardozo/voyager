@@ -483,9 +483,6 @@
                 $(this).closest('form').attr('action', $(this).attr('href'));
                 $(this).closest('form').submit();
             });
-
-            // Initiliaze rich text editor
-            tinymce.init(window.voyagerTinyMCE.getConfig());
         });
     </script>
     <script type="text/javascript">

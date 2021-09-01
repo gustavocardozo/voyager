@@ -28,7 +28,6 @@
                     data-get-items-field="{{$row->field}}"
                     @if(!is_null($dataTypeContent->getKey())) data-id="{{$dataTypeContent->getKey()}}" @endif
                     data-method="{{ !is_null($dataTypeContent->getKey()) ? 'edit' : 'add' }}"
-                    @if($row->required == 1) required @endif
                 >
                     @php
                         $model = app($options->model);
@@ -118,13 +117,16 @@
             @endif
 
         @elseif($options->type == 'belongsToMany')
+            @php
+                $key = $options->pivot_table == 'abonos_direcciones' ? 'id_direcciones' : $options->key;
+            @endphp
 
             @if(isset($view) && ($view == 'browse' || $view == 'read'))
 
                 @php
                     $relationshipData = (isset($data)) ? $data : $dataTypeContent;
-
-                    $selected_values = isset($relationshipData) ? $relationshipData->belongsToMany($options->model, $options->pivot_table, $options->foreign_pivot_key ?? null, $options->related_pivot_key ?? null, $options->parent_key ?? null, $options->key)->get()->map(function ($item, $key) use ($options) {
+                    $key = $options->pivot_table == 'abonos_direcciones' ? 'id_direcciones' : $options->key;
+                    $selected_values = isset($relationshipData) ? $relationshipData->belongsToMany($options->model, $options->pivot_table, $options->foreign_pivot_key ?? null, $options->related_pivot_key ?? null, $key, $options->related_key ?? null)->get()->map(function ($item, $key) use ($options) {
             			return $item->{$options->label};
             		})->all() : array();
                 @endphp
@@ -164,11 +166,10 @@
                         data-label="{{$options->label}}"
                         data-error-message="{{__('voyager::bread.error_tagging')}}"
                     @endif
-                    @if($row->required == 1) required @endif
                 >
 
                         @php
-                            $selected_values = isset($dataTypeContent) ? $dataTypeContent->belongsToMany($options->model, $options->pivot_table, $options->foreign_pivot_key ?? null, $options->related_pivot_key ?? null, $options->parent_key ?? null, $options->key)->get()->map(function ($item, $key) use ($options) {
+                            $selected_values = isset($dataTypeContent) ? $dataTypeContent->belongsToMany($options->model, $options->pivot_table, $options->foreign_pivot_key ?? null, $options->related_pivot_key ?? null, $key, $options->related_key ?? null)->get()->map(function ($item, $key) use ($options) {
                                 return $item->{$options->key};
                             })->all() : array();
                             $relationshipOptions = app($options->model)->all();
